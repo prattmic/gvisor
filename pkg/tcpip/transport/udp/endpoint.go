@@ -50,6 +50,11 @@ const (
 	StateClosed
 )
 
+const (
+	// maximumPacketSize is the largest single packet, used in a simple sanity check.
+	maximumPacketSize = math.MaxUint16
+)
+
 // endpoint represents a UDP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -277,15 +282,10 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netPr
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
-	}
-
-	if p.Size() > math.MaxUint16 {
-		// Payload can't possibly fit in a packet.
-		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
 	to := opts.To
@@ -370,9 +370,13 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		}
 	}
 
-	v, err := p.Get(p.Size())
+	v, err := p.Payload(-1) // Everything.
 	if err != nil {
 		return 0, nil, err
+	}
+	if len(v) > maximumPacketSize {
+		// Payload can't possibly fit in a packet.
+		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
 	ttl := route.DefaultTTL()

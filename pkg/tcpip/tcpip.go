@@ -261,31 +261,28 @@ type FullAddress struct {
 	Port uint16
 }
 
-// Payload provides an interface around data that is being sent to an endpoint.
-// This allows the endpoint to request the amount of data it needs based on
-// internal buffers without exposing them. 'p.Get(p.Size())' reads all the data.
-type Payload interface {
-	// Get returns a slice containing exactly 'min(size, p.Size())' bytes.
-	Get(size int) ([]byte, *Error)
-
-	// Size returns the payload size.
-	Size() int
+// Payloader is an interface that provides data.
+//
+// This interface allows the endpoint to request the amount of data it needs
+// based on internal buffers without exposing them.
+type Payloader interface {
+	// Payload returns a slice containing at most size bytes.
+	//
+	// If size < 0, then all available bytes should be returned.
+	Payload(size int) ([]byte, *Error)
 }
 
-// SlicePayload implements Payload on top of slices for convenience.
+// SlicePayload implements Payloader for slices.
+//
+// This is typically used for tests.
 type SlicePayload []byte
 
-// Get implements Payload.
-func (s SlicePayload) Get(size int) ([]byte, *Error) {
-	if size > s.Size() {
-		size = s.Size()
+// Payload implements Payloader.Payload.
+func (s SlicePayload) Payload(size int) ([]byte, *Error) {
+	if size < 0 || size > len(s) {
+		size = len(s)
 	}
 	return s[:size], nil
-}
-
-// Size implements Payload.
-func (s SlicePayload) Size() int {
-	return len(s)
 }
 
 // A ControlMessages contains socket control messages for IP sockets.
@@ -338,7 +335,7 @@ type Endpoint interface {
 	// ErrNoLinkAddress and a notification channel is returned for the caller to
 	// block. Channel is closed once address resolution is complete (success or
 	// not). The channel is only non-nil in this case.
-	Write(Payload, WriteOptions) (int64, <-chan struct{}, *Error)
+	Write(Payloader, WriteOptions) (int64, <-chan struct{}, *Error)
 
 	// Peek reads data without consuming it from the endpoint.
 	//
@@ -432,6 +429,11 @@ type WriteOptions struct {
 
 	// EndOfRecord has the same semantics as Linux's MSG_EOR.
 	EndOfRecord bool
+
+	// Atomic means that the call to Payloader will fetch data that must
+	// be enqueued in the available space. This may affect certain lock
+	// optimizations, but data loss may occur if Atomic is not respected.
+	Atomic bool
 }
 
 // SockOpt represents socket options which values have the int type.
