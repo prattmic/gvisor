@@ -81,6 +81,19 @@ const (
 	PacketMMap
 )
 
+func (p PacketDispatchMode) String() string {
+	switch p {
+	case Readv:
+		return "Readv"
+	case RecvMMsg:
+		return "RecvMMsg"
+	case PacketMMap:
+		return "PacketMMap"
+	default:
+		return fmt.Sprintf("unknown packet dispatch mode %v", p)
+	}
+}
+
 type endpoint struct {
 	// fds is the set of file descriptors each identifying one inbound/outbound
 	// channel. The endpoint will dispatch from all inbound channels as well as
