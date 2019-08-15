@@ -64,12 +64,6 @@ namespace {
 constexpr char kMessage[] = "soweoneul malhaebwa";
 constexpr in_port_t kPort = 0x409c;  // htons(40000)
 
-//
-// "Cooked" tests. Cooked AF_PACKET sockets do not contain link layer
-// headers, and provide link layer destination/source information via a
-// returned struct sockaddr_ll.
-//
-
 // Send kMessage via sock to loopback
 void SendUDPMessage(int sock) {
   struct sockaddr_in dest = {};
@@ -81,27 +75,13 @@ void SendUDPMessage(int sock) {
               SyscallSucceedsWithValue(sizeof(kMessage)));
 }
 
-// Send an IP packet and make sure ETH_P_<something else> doesn't pick it up.
-TEST(BasicCookedPacketTest, WrongType) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+//
+// Raw tests. Packets sent with raw AF_PACKET sockets always include link layer
+// headers.
+//
 
-  FileDescriptor sock = ASSERT_NO_ERRNO_AND_VALUE(
-      Socket(AF_PACKET, SOCK_DGRAM, htons(ETH_P_PUP)));
-
-  // Let's use a simple IP payload: a UDP datagram.
-  FileDescriptor udp_sock =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
-  SendUDPMessage(udp_sock.get());
-
-  // Wait and make sure the socket never becomes readable.
-  struct pollfd pfd = {};
-  pfd.fd = sock.get();
-  pfd.events = POLLIN;
-  EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 1000), SyscallSucceedsWithValue(0));
-}
-
-// Tests for "cooked" (SOCK_DGRAM) packet(7) sockets.
-class CookedPacketTest : public ::testing::TestWithParam<int> {
+// Tests for "raw" (SOCK_RAW) packet(7) sockets.
+class RawPacketTest : public ::testing::TestWithParam<int> {
  protected:
   // Creates a socket to be used in tests.
   void SetUp() override;
@@ -116,20 +96,34 @@ class CookedPacketTest : public ::testing::TestWithParam<int> {
   int socket_;
 };
 
-void CookedPacketTest::SetUp() {
+void RawPacketTest::SetUp() {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
-  ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
+  if (!IsRunningOnGvisor()) {
+    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
+        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDONLY));
+    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
+        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDONLY));
+    char enabled;
+    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(enabled, '1');
+    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(enabled, '1');
+  }
+
+  ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
               SyscallSucceeds());
 }
 
-void CookedPacketTest::TearDown() {
+void RawPacketTest::TearDown() {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   EXPECT_THAT(close(socket_), SyscallSucceeds());
 }
 
-int CookedPacketTest::GetLoopbackIndex() {
+int RawPacketTest::GetLoopbackIndex() {
   struct ifreq ifr;
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
   EXPECT_THAT(ioctl(socket_, SIOCGIFINDEX, &ifr), SyscallSucceeds());
@@ -138,7 +132,7 @@ int CookedPacketTest::GetLoopbackIndex() {
 }
 
 // Receive via a packet socket.
-TEST_P(CookedPacketTest, Receive) {
+TEST_P(RawPacketTest, Receive) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   // Let's use a simple IP payload: a UDP datagram.
@@ -153,8 +147,8 @@ TEST_P(CookedPacketTest, Receive) {
   EXPECT_THAT(RetryEINTR(poll)(&pfd, 1, 2000), SyscallSucceedsWithValue(1));
 
   // Read and verify the data.
-  constexpr size_t packet_size =
-      sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(kMessage);
+  constexpr size_t packet_size = sizeof(struct ethhdr) + sizeof(struct iphdr) +
+                                 sizeof(struct udphdr) + sizeof(kMessage);
   char buf[64];
   struct sockaddr_ll src = {};
   socklen_t src_len = sizeof(src);
@@ -177,29 +171,40 @@ TEST_P(CookedPacketTest, Receive) {
     EXPECT_EQ(src.sll_addr[i], 0);
   }
 
+  // Verify the ethernet header. We memcpy to deal with pointer alignment.
+  struct ethhdr eth = {};
+  memcpy(&eth, buf, sizeof(eth));
+  // The destination and source address should be 0, for loopback.
+  for (int i = 0; i < ETH_ALEN; i++) {
+    EXPECT_EQ(eth.h_dest[i], 0);
+    EXPECT_EQ(eth.h_source[i], 0);
+  }
+  EXPECT_EQ(eth.h_proto, htons(ETH_P_IP));
+
   // Verify the IP header. We memcpy to deal with pointer aligment.
   struct iphdr ip = {};
-  memcpy(&ip, buf, sizeof(ip));
+  memcpy(&ip, buf + sizeof(ethhdr), sizeof(ip));
   EXPECT_EQ(ip.ihl, 5);
   EXPECT_EQ(ip.version, 4);
-  EXPECT_EQ(ip.tot_len, htons(packet_size));
+  EXPECT_EQ(ip.tot_len, htons(packet_size - sizeof(eth)));
   EXPECT_EQ(ip.protocol, IPPROTO_UDP);
   EXPECT_EQ(ip.daddr, htonl(INADDR_LOOPBACK));
   EXPECT_EQ(ip.saddr, htonl(INADDR_LOOPBACK));
 
   // Verify the UDP header. We memcpy to deal with pointer aligment.
   struct udphdr udp = {};
-  memcpy(&udp, buf + sizeof(iphdr), sizeof(udp));
+  memcpy(&udp, buf + sizeof(eth) + sizeof(iphdr), sizeof(udp));
   EXPECT_EQ(udp.dest, kPort);
   EXPECT_EQ(udp.len, htons(sizeof(udphdr) + sizeof(kMessage)));
 
   // Verify the payload.
-  char* payload = reinterpret_cast<char*>(buf + sizeof(iphdr) + sizeof(udphdr));
+  char* payload = reinterpret_cast<char*>(buf + sizeof(eth) + sizeof(iphdr) +
+                                          sizeof(udphdr));
   EXPECT_EQ(strncmp(payload, kMessage, sizeof(kMessage)), 0);
 }
 
 // Send via a packet socket.
-TEST_P(CookedPacketTest, Send) {
+TEST_P(RawPacketTest, Send) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 
   // Let's send a UDP packet and receive it using a regular UDP socket.
@@ -223,8 +228,13 @@ TEST_P(CookedPacketTest, Send) {
   // We're sending to the loopback device, so the address is all 0s.
   memset(dest.sll_addr, 0x00, ETH_ALEN);
 
+  // Set up the ethernet header. The kernel takes care of the footer.
+  // We're sending to and from hardware address 0 (loopback).
+  struct ethhdr eth = {};
+  eth.h_proto = htons(ETH_P_IP);
+
   // Set up the IP header.
-  struct iphdr iphdr = {0};
+  struct iphdr iphdr = {};
   iphdr.ihl = 5;
   iphdr.version = 4;
   iphdr.tos = 0;
@@ -250,10 +260,13 @@ TEST_P(CookedPacketTest, Send) {
   udphdr.check = UDPChecksum(iphdr, udphdr, kMessage, sizeof(kMessage));
 
   // Copy both headers and the payload into our packet buffer.
-  char send_buf[sizeof(iphdr) + sizeof(udphdr) + sizeof(kMessage)];
-  memcpy(send_buf, &iphdr, sizeof(iphdr));
-  memcpy(send_buf + sizeof(iphdr), &udphdr, sizeof(udphdr));
-  memcpy(send_buf + sizeof(iphdr) + sizeof(udphdr), kMessage, sizeof(kMessage));
+  char
+      send_buf[sizeof(eth) + sizeof(iphdr) + sizeof(udphdr) + sizeof(kMessage)];
+  memcpy(send_buf, &eth, sizeof(eth));
+  memcpy(send_buf + sizeof(ethhdr), &iphdr, sizeof(iphdr));
+  memcpy(send_buf + sizeof(ethhdr) + sizeof(iphdr), &udphdr, sizeof(udphdr));
+  memcpy(send_buf + sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr), kMessage,
+         sizeof(kMessage));
 
   // Send it.
   ASSERT_THAT(sendto(socket_, send_buf, sizeof(send_buf), 0,
@@ -288,7 +301,7 @@ TEST_P(CookedPacketTest, Send) {
   EXPECT_EQ(src.sin_addr.s_addr, htonl(INADDR_LOOPBACK));
 }
 
-INSTANTIATE_TEST_SUITE_P(AllInetTests, CookedPacketTest,
+INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
                          ::testing::Values(ETH_P_IP, ETH_P_ALL));
 
 }  // namespace

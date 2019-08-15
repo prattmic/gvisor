@@ -17,8 +17,7 @@
 //
 //   * manually write and inspect transport layer headers and payloads
 //   * receive all traffic of a given transport protocol (e.g. ICMP or UDP)
-//   * optionally write and inspect network layer and link layer headers for
-//     packets
+//   * optionally write and inspect network layer headers of packets
 //
 // Raw sockets don't have any notion of ports, and incoming packets are
 // demultiplexed solely by protocol number. Thus, a raw UDP endpoint will
@@ -84,7 +83,7 @@ type endpoint struct {
 	closed     bool
 	connected  bool
 	bound      bool
-	// registeredNIC is the NIC to which th endpoint is explicitly
+	// registeredNIC is the NIC to which the endpoint is explicitly
 	// registered. Is set when Connect or Bind are used to specify a NIC.
 	registeredNIC tcpip.NICID
 	// boundNIC and boundAddr are set on calls to Bind(). When callers
@@ -99,7 +98,6 @@ type endpoint struct {
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
-// TODO(b/129292371): IP_HDRINCL and AF_PACKET.
 func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return newEndpoint(stack, netProto, transProto, waiterQueue, true /* associated */)
 }

@@ -23,6 +23,7 @@ package loopback
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -81,7 +82,22 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	// Because we're immediately turning around and writing the packet back to the
 	// rx path, we intentionally don't preserve the remote and local link
 	// addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv)
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv, nil /* ethHeader */)
+
+	return nil
+}
+
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+	// Reject the packet if it's shorter than an ethernet header.
+	if packet.Size() < header.EthernetMinimumSize {
+		return tcpip.ErrBadAddress
+	}
+
+	// There should be an ethernet header at the beginning of packet.
+	ethHeader := header.Ethernet(packet.First()[:header.EthernetMinimumSize])
+	packet.TrimFront(len(ethHeader))
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, packet, buffer.View(ethHeader))
 
 	return nil
 }

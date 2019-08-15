@@ -73,13 +73,29 @@ type TransportEndpoint interface {
 
 // RawTransportEndpoint is the interface that needs to be implemented by raw
 // transport protocol endpoints. RawTransportEndpoints receive the entire
-// packet - including the link, network, and transport headers - as delivered
-// to netstack.
+// packet - including the network and transport headers - as delivered to
+// netstack.
 type RawTransportEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint. The packet contains all data from the link
 	// layer up.
 	HandlePacket(r *Route, netHeader buffer.View, packet buffer.VectorisedView)
+}
+
+// PacketEndpoint is the interface that neets to be implemented by packet
+// transport protocol endpoints. These endpoints receive link layer headers in
+// addition to whatever they contain (usually network and transport layer
+// headers and a payload).
+type PacketEndpoint interface {
+	// HandlePacket is called by the stack when new packets arrive that
+	// match the endpoint.
+	//
+	// Implementers should treat packet as immutable and should be copy it
+	// before before modification.
+	//
+	// ethHeader may have a length of 0, in which case the PacketEndpoint
+	// should construct its own ethernet header for applications.
+	HandlePacket(nicid tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, packet buffer.VectorisedView, ethHeader buffer.View)
 }
 
 // TransportProtocol is the interface that needs to be implemented by transport
@@ -231,9 +247,10 @@ type NetworkProtocol interface {
 // packets to the appropriate network endpoint after it has been handled by
 // the data link layer.
 type NetworkDispatcher interface {
-	// DeliverNetworkPacket finds the appropriate network protocol
-	// endpoint and hands the packet over for further processing.
-	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
+	// DeliverNetworkPacket finds the appropriate network protocol endpoint
+	// and hands the packet over for further processing. ethHeader may have
+	// length 0 when the caller does not have ethernet data.
+	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, ethHeader buffer.View)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
@@ -290,6 +307,10 @@ type LinkEndpoint interface {
 	// r.LocalLinkAddress if it is provided.
 	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
 
+	// WriteRawPacket writes a packet directly to the link without adding
+	// an ethernet header.
+	WriteRawPacket(packet buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
+
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
 	Attach(dispatcher NetworkDispatcher)
@@ -305,12 +326,13 @@ type InjectableLinkEndpoint interface {
 	LinkEndpoint
 
 	// Inject injects an inbound packet.
-	Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
+	InjectInbound(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
 
-	// WriteRawPacket writes a fully formed outbound packet directly to the link.
+	// InjectOutbound writes a fully formed outbound packet directly to the
+	// link.
 	//
 	// dest is used by endpoints with multiple raw destinations.
-	WriteRawPacket(dest tcpip.Address, packet []byte) *tcpip.Error
+	InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error
 }
 
 // A LinkAddressResolver is an extension to a NetworkProtocol that
@@ -374,11 +396,18 @@ type UnassociatedEndpointFactory interface {
 	NewUnassociatedRawEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
 }
 
+// PacketEndpointFactory produces endpoints for writing packets that can
+// specify link layer headers and payload.
+type PacketEndpointFactory interface {
+	NewEndpoint(stack *Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+}
+
 var (
 	transportProtocols = make(map[string]TransportProtocolFactory)
 	networkProtocols   = make(map[string]NetworkProtocolFactory)
 
-	unassociatedFactory UnassociatedEndpointFactory
+	unassociatedFactory   UnassociatedEndpointFactory
+	packetEndpointFactory PacketEndpointFactory
 
 	linkEPMu           sync.RWMutex
 	nextLinkEndpointID tcpip.LinkEndpointID = 1
@@ -404,6 +433,13 @@ func RegisterNetworkProtocolFactory(name string, p NetworkProtocolFactory) {
 // to be called by init() functions of the protocols.
 func RegisterUnassociatedFactory(f UnassociatedEndpointFactory) {
 	unassociatedFactory = f
+}
+
+// RegisterPacketEndpointFactory register a factory to produce PacketEndpoints.
+// This function is intended to be called by an init() function of an endpoint
+// package.
+func RegisterPacketEndpointFactory(f PacketEndpointFactory) {
+	packetEndpointFactory = f
 }
 
 // RegisterLinkEndpoint register a link-layer protocol endpoint and returns an
