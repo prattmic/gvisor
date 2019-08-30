@@ -1,3 +1,9 @@
+# Compile the proctor binary.
+FROM golang:1.12 AS golang
+COPY common $GOPATH/src/gvisor.dev/gvisor/test/runtimes/common/common
+COPY nodejs/proctor-nodejs.go ${LANG_DIR}
+RUN ["go", "build", "-o", "/proctor", "proctor-nodejs.go"]
+
 FROM ubuntu:bionic
 ENV LANG_VER=12.4.0
 ENV LANG_NAME=Node
@@ -10,9 +16,6 @@ RUN apt-get update && apt-get install -y \
   python
 
 WORKDIR /root
-RUN curl -o go.tar.gz https://dl.google.com/go/go1.12.6.linux-amd64.tar.gz
-RUN tar -zxf go.tar.gz
-
 RUN curl -o node-v${LANG_VER}.tar.gz https://nodejs.org/dist/v${LANG_VER}/node-v${LANG_VER}.tar.gz
 RUN tar -zxf node-v${LANG_VER}.tar.gz
 ENV LANG_DIR=/root/node-v${LANG_VER}
@@ -22,10 +25,8 @@ RUN ./configure
 RUN make
 RUN make test-build
 
-COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
-COPY nodejs/proctor-nodejs.go ${LANG_DIR}
-RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-nodejs.go"]
+COPY --from=golang /proctor /proctor
 
 # Including dumb-init emulates the Linux "init" process, preventing the failure
 # of tests involving worker processes.
-ENTRYPOINT ["/usr/bin/dumb-init", "/root/go/bin/proctor"]
+ENTRYPOINT ["/usr/bin/dumb-init", "/proctor"]

@@ -1,6 +1,13 @@
+# Compile the proctor binary.
+FROM golang:1.12 AS golang
+COPY common $GOPATH/src/gvisor.dev/gvisor/test/runtimes/common/common
+COPY java/proctor-java.go ${LANG_DIR}
+RUN ["go", "build", "-o", "/proctor", "proctor-java.go"]
+
 FROM ubuntu:bionic
 ENV LANG_VER=3.7.3
 ENV LANG_NAME=Python
+ENV LANG_DIR=/root/cpython-${LANG_VER}
 
 RUN apt-get update && apt-get install -y \
   curl \
@@ -13,21 +20,14 @@ RUN apt-get update && apt-get install -y \
   make \
   zlib1g-dev
 
-WORKDIR /root
-RUN curl -o go.tar.gz https://dl.google.com/go/go1.12.6.linux-amd64.tar.gz
-RUN tar -zxf go.tar.gz
-
 # Use flags -LJO to follow the html redirect and download .tar.gz.
+WORKDIR /root
 RUN curl -LJO https://github.com/python/cpython/archive/v${LANG_VER}.tar.gz
 RUN tar -zxf cpython-${LANG_VER}.tar.gz
-ENV LANG_DIR=/root/cpython-${LANG_VER}
 
 WORKDIR ${LANG_DIR}
 RUN ./configure --with-pydebug
 RUN make -s -j2
 
-COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
-COPY python/proctor-python.go ${LANG_DIR}
-RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-python.go"]
-
-ENTRYPOINT ["/root/go/bin/proctor"]
+COPY --from=golang /proctor /proctor
+ENTRYPOINT ["/proctor"]

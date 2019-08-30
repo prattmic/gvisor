@@ -1,3 +1,9 @@
+# Compile the proctor binary.
+FROM golang:1.12 AS golang
+COPY common $GOPATH/src/gvisor.dev/gvisor/test/runtimes/common/common
+COPY go/proctor-go.go ${LANG_DIR}
+RUN ["go", "build", "-o", "/proctor", "proctor-go.go"]
+
 FROM ubuntu:bionic
 ENV LANG_VER=1.12.5
 ENV LANG_NAME=Go
@@ -27,9 +33,5 @@ RUN ./make.bash
 RUN ["/root/go/bin/go", "tool", "dist", "test", "-compile-only"]
 
 WORKDIR ${LANG_DIR}
-
-COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
-COPY go/proctor-go.go ${LANG_DIR}
-RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-go.go"]
-
-ENTRYPOINT ["/root/go/bin/proctor"]
+COPY --from=golang /proctor /proctor
+ENTRYPOINT ["/proctor"]
