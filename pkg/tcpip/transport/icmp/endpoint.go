@@ -57,6 +57,7 @@ type endpoint struct {
 	stack       *stack.Stack `state:"manual"`
 	netProto    tcpip.NetworkProtocolNumber
 	transProto  tcpip.TransportProtocolNumber
+	stats       tcpip.EndpointStats
 	waiterQueue *waiter.Queue
 
 	// The following fields are used to manage the receive queue, and are
@@ -143,6 +144,7 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	if e.rcvList.Empty() {
 		err := tcpip.ErrWouldBlock
 		if e.rcvClosed {
+			e.stats.ReadErrors.ReadClosed.Increment()
 			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
@@ -217,6 +219,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
+		e.stats.WriteErrors.WriteClosed.Increment()
 		return 0, nil, tcpip.ErrClosedForSend
 	}
 
@@ -273,6 +276,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		// Find the enpoint.
 		r, err := e.stack.FindRoute(nicid, e.bindAddr, to.Addr, netProto, false /* multicastLoop */)
 		if err != nil {
+			e.stats.SendErrors.NoRoute.Increment()
 			return 0, nil, err
 		}
 		defer r.Release()
@@ -303,9 +307,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 	}
 
 	if err != nil {
+		e.stats.SendErrors.SendErrors.Increment()
 		return 0, nil, err
 	}
 
+	e.stats.PacketsSent.Increment()
 	return int64(len(v)), nil, nil
 }
 
@@ -677,12 +683,14 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 		h := header.ICMPv4(vv.First())
 		if h.Type() != header.ICMPv4EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
+			e.stats.ReceiveErrors.ReceiveErrors.Increment()
 			return
 		}
 	case header.IPv6ProtocolNumber:
 		h := header.ICMPv6(vv.First())
 		if h.Type() != header.ICMPv6EchoReply {
 			e.stack.Stats().DroppedPackets.Increment()
+			e.stats.ReceiveErrors.ReceiveErrors.Increment()
 			return
 		}
 	}
@@ -690,8 +698,16 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
-	if !e.rcvReady || e.rcvClosed || e.rcvBufSize >= e.rcvBufSizeMax {
+	if !e.rcvReady || e.rcvClosed {
 		e.stack.Stats().DroppedPackets.Increment()
+		e.stats.ReceiveErrors.ClosedReceiver.Increment()
+		e.rcvMu.Unlock()
+		return
+	}
+
+	if e.rcvBufSize >= e.rcvBufSizeMax {
+		e.stack.Stats().DroppedPackets.Increment()
+		e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
 		e.rcvMu.Unlock()
 		return
 	}
@@ -714,7 +730,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	pkt.timestamp = e.stack.NowNanoseconds()
 
 	e.rcvMu.Unlock()
-
+	e.stats.PacketsReceived.Increment()
 	// Notify any waiters that there's data to be read now.
 	if wasEmpty {
 		e.waiterQueue.Notify(waiter.EventIn)

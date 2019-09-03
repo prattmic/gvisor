@@ -853,6 +853,9 @@ type TCPStats struct {
 	// SegmentsSent is the number of TCP segments sent.
 	SegmentsSent *StatCounter
 
+	// SegmentSendErrors is the number of TCP segments failed to be sent.
+	SegmentSendErrors *StatCounter
+
 	// ResetsSent is the number of TCP resets sent.
 	ResetsSent *StatCounter
 
@@ -905,6 +908,9 @@ type UDPStats struct {
 
 	// PacketsSent is the number of UDP datagrams sent via sendUDP.
 	PacketsSent *StatCounter
+
+	// PacketSendErrors is the number of datagrams failed to be sent.
+	PacketSendErrors *StatCounter
 }
 
 // Stats holds statistics about the networking stack.
@@ -915,7 +921,7 @@ type Stats struct {
 	// stack that were for an unknown or unsupported protocol.
 	UnknownProtocolRcvdPackets *StatCounter
 
-	// MalformedRcvPackets is the number of packets received by the stack
+	// MalformedRcvdPackets is the number of packets received by the stack
 	// that were deemed malformed.
 	MalformedRcvdPackets *StatCounter
 
@@ -933,6 +939,75 @@ type Stats struct {
 
 	// UDP breaks out UDP-specific stats.
 	UDP UDPStats
+}
+
+// ReceiveErrors collect segment receive errors within transport layer for an endpoint.
+type ReceiveErrors struct {
+	// ReceiveErrors is the number of errors seen while reading packet from lower layers.
+	ReceiveErrors StatCounter
+
+	// ReceiveBufferOverflow is the number of received packet drops
+	// due to receive buffer overflow.
+	ReceiveBufferOverflow StatCounter
+
+	// MalformedPacketsReceived is the number of incoming packets
+	// dropped due to packet header being in a malformed state.
+	MalformedPacketsReceived StatCounter
+
+	// ClosedReceiver is the number of received packets dropped because
+	// of receiving endpoint state being closed.
+	ClosedReceiver StatCounter
+}
+
+// SendErrors collect segment send errors within the transport layer for an endpoint.
+type SendErrors struct {
+	// SendErrors is the number of errors seen while writing packet to lower layers.
+	SendErrors StatCounter
+
+	// NoRoute is the number of times we failed to resolve IP route.
+	NoRoute StatCounter
+
+	// NoLinkAddr is the number of times we failed to resolve ARP.
+	NoLinkAddr StatCounter
+}
+
+// ReadErrors collect segment read errors from an endpoint read call.
+type ReadErrors struct {
+	// ReadClosed is the number of received packet drops because of endpoint being shut for read.
+	ReadClosed StatCounter
+
+	// InvalidEndpointState is the number of times we found the endpoint state to be unexpected.
+	InvalidEndpointState StatCounter
+}
+
+// WriteErrors collect segment write errors from an endpoint write call.
+type WriteErrors struct {
+	// WriteClosed is the number of packet drops because of endpoint being shut for write.
+	WriteClosed StatCounter
+
+	// InvalidEndpointState is the number of times we found the endpoint state to be unexpected.
+	InvalidEndpointState StatCounter
+}
+
+// EndpointStats holds statistics about the endpoint.
+type EndpointStats struct {
+	// PacketsReceived is the number of successful packet receives.
+	PacketsReceived StatCounter
+
+	// PacketsSent is the number of successful packet sends.
+	PacketsSent StatCounter
+
+	// ReceiveErrors collect segment receive errors within transport layer.
+	ReceiveErrors ReceiveErrors
+
+	// ReadErrors collect segment read errors from an endpoint read call.
+	ReadErrors ReadErrors
+
+	// SendErrors collect segment send errors within the transport layer.
+	SendErrors SendErrors
+
+	// WriteErrors collect segment write errors from an endpoint write call.
+	WriteErrors WriteErrors
 }
 
 func fillIn(v reflect.Value) {

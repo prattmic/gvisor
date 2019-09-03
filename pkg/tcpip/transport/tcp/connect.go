@@ -251,8 +251,11 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		SACKPermitted: rcvSynOpts.SACKPermitted,
 		MSS:           h.ep.amss,
 	}
-	sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
-
+	if sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts) != nil {
+		h.ep.stats.SendErrors.SegmentSendErrors.Increment()
+	} else {
+		h.ep.stats.SegmentsSent.Increment()
+	}
 	return nil
 }
 
@@ -296,7 +299,11 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			SACKPermitted: h.ep.sackPermitted,
 			MSS:           h.ep.amss,
 		}
-		sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+		if sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts) != nil {
+			h.ep.stats.SendErrors.SegmentSendErrors.Increment()
+		} else {
+			h.ep.stats.SegmentsSent.Increment()
+		}
 		return nil
 	}
 
@@ -383,7 +390,11 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 		switch index {
 		case wakerForResolution:
 			if _, err := h.ep.route.Resolve(resolutionWaker); err != tcpip.ErrWouldBlock {
+				if err == tcpip.ErrNoLinkAddress {
+					h.ep.stats.SendErrors.e.NoLinkAddr.Increment()
+				}
 				// Either success (err == nil) or failure.
+				h.ep.stats.SendErrors.e.NoRoute.Increment()
 				return err
 			}
 			// Resolution not completed. Keep trying...
@@ -460,7 +471,12 @@ func (h *handshake) execute() *tcpip.Error {
 			synOpts.WS = -1
 		}
 	}
-	sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+	if sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts) != nil {
+		h.ep.stats.SendErrors.SegmentSendErrors.Increment()
+	} else {
+		h.ep.stats.SegmentsSent.Increment()
+	}
+
 	for h.state != handshakeCompleted {
 		switch index, _ := s.Fetch(true); index {
 		case wakerForResend:
@@ -469,7 +485,11 @@ func (h *handshake) execute() *tcpip.Error {
 				return tcpip.ErrTimeout
 			}
 			rt.Reset(timeOut)
-			sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+			if sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts) != nil {
+				h.ep.stats.SendErrors.SegmentSendErrors.Increment()
+			} else {
+				h.ep.stats.SegmentsSent.Increment()
+			}
 
 		case wakerForNotification:
 			n := h.ep.fetchNotifications()
@@ -624,12 +644,16 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 
+	err := r.WritePacket(gso, hdr, data, ProtocolNumber, ttl)
+	if err != nil {
+		r.Stats().TCP.SegmentSendErrors.Increment()
+		return err
+	}
 	r.Stats().TCP.SegmentsSent.Increment()
 	if (flags & header.TCPFlagRst) != 0 {
 		r.Stats().TCP.ResetsSent.Increment()
 	}
-
-	return r.WritePacket(gso, hdr, data, ProtocolNumber, ttl)
+	return nil
 }
 
 // makeOptions makes an options slice.
@@ -679,8 +703,13 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 	}
 	options := e.makeOptions(sackBlocks)
 	err := sendTCP(&e.route, e.id, data, e.route.DefaultTTL(), flags, seq, ack, rcvWnd, options, e.gso)
+	if err != nil {
+		e.stats.SendErrors.SegmentSendErrors.Increment()
+		return err
+	}
+	e.stats.SegmentsSent.Increment()
 	putOptions(options)
-	return err
+	return nil
 }
 
 func (e *endpoint) handleWrite() *tcpip.Error {

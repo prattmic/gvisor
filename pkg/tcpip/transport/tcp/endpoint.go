@@ -170,6 +170,69 @@ type rcvBufAutoTuneParams struct {
 	disabled bool
 }
 
+// ReceiveErrors collect segment receive errors within transport layer.
+type ReceiveErrors struct {
+	// ChecksumErrors is the number of segments dropped due to bad checksums.
+	ChecksumErrors tcpip.StatCounter
+
+	// ListenOverflowSynDrop is the number of times the listen queue overflowed
+	// and a SYN was dropped.
+	ListenOverflowSynDrop tcpip.StatCounter
+
+	// ListenOverflowAckDrop is the number of times the final ACK
+	// in the handshake was dropped due to overflow.
+	ListenOverflowAckDrop tcpip.StatCounter
+
+	// ZeroRcvWindowState is the number of times we advertized
+	// zero receive window when rcvList is full.
+	ZeroRcvWindowState tcpip.StatCounter
+
+	e tcpip.ReceiveErrors
+}
+
+// SendErrors collect segment send errors within the transport layer.
+type SendErrors struct {
+	// SegmentSendErrors is the number of TCP segments failed to be sent.
+	SegmentSendErrors tcpip.StatCounter
+
+	// Retransmits is the number of TCP segments retransmitted
+	Retransmits tcpip.StatCounter
+
+	// FastRetransmit is the number of segments retransmitted in fast
+	// recovery.
+	FastRetransmit tcpip.StatCounter
+
+	// Timeouts is the number of times the RTO expired.
+	Timeouts tcpip.StatCounter
+
+	e tcpip.SendErrors
+}
+
+// Stats holds statistics about the endpoint.
+type Stats struct {
+	// SegmentsReceived is the number of TCP segments received that
+	// the transport layer successfully parsed.
+	SegmentsReceived tcpip.StatCounter
+
+	// SegmentsSent is the number of TCP segments sent.
+	SegmentsSent tcpip.StatCounter
+
+	// FailedConnectionAttempts is the number of times we saw Connect and Accept errors.
+	FailedConnectionAttempts tcpip.StatCounter
+
+	// ReceiveErrors collect segment receive errors within transport layer.
+	ReceiveErrors ReceiveErrors
+
+	// ReadErrors collect segment read errors from an endpoint read call.
+	ReadErrors tcpip.ReadErrors
+
+	// SendErrors collect segment send errors within the transport layer.
+	SendErrors SendErrors
+
+	// WriteErrors collect segment write errors from an endpoint write call.
+	WriteErrors tcpip.WriteErrors
+}
+
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -190,6 +253,7 @@ type endpoint struct {
 	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue `state:"wait"`
 
+	stats Stats
 	// lastError represents the last error that the endpoint reported;
 	// access to it is protected by the following mutex.
 	lastErrorMu sync.Mutex   `state:"nosave"`
@@ -733,6 +797,7 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 		e.rcvListMu.Unlock()
 		he := e.hardError
 		e.mu.RUnlock()
+		e.stats.ReadErrors.InvalidEndpointState.Increment()
 		if s == StateError {
 			return buffer.View{}, tcpip.ControlMessages{}, he
 		}
@@ -744,6 +809,9 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 
 	e.mu.RUnlock()
 
+	if err != nil && err != tcpip.ErrWouldBlock {
+		e.stats.ReadErrors.ReadClosed.Increment()
+	}
 	return v, tcpip.ControlMessages{}, err
 }
 
@@ -818,6 +886,9 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 	if err != nil {
 		e.sndBufMu.Unlock()
 		e.mu.RUnlock()
+		if err != tcpip.ErrWouldBlock {
+			e.stats.WriteErrors.WriteClosed.Increment()
+		}
 		return 0, nil, err
 	}
 
@@ -846,6 +917,9 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 	if err != nil {
 		e.sndBufMu.Unlock()
 		e.mu.RUnlock()
+		if err != tcpip.ErrWouldBlock {
+			e.stats.WriteErrors.WriteClosed.Increment()
+		}
 		return 0, nil, err
 	}
 
@@ -888,6 +962,7 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data.
 	if s := e.state; !s.connected() && s != StateClose {
+		e.stats.ReadErrors.InvalidEndpointState.Increment()
 		if s == StateError {
 			return 0, tcpip.ControlMessages{}, e.hardError
 		}
@@ -1384,6 +1459,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 	defer func() {
 		if err != nil && !err.IgnoreStats() {
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+			e.stats.FailedConnectionAttempts.Increment()
 		}
 	}()
 
@@ -1603,6 +1679,7 @@ func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 	defer func() {
 		if err != nil && !err.IgnoreStats() {
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+			e.stats.FailedConnectionAttempts.Increment()
 		}
 	}()
 
@@ -1630,6 +1707,7 @@ func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 
 	// Endpoint must be bound before it can transition to listen mode.
 	if e.state != StateBound {
+		e.stats.ReadErrors.InvalidEndpointState.Increment()
 		return tcpip.ErrInvalidEndpointState
 	}
 
@@ -1789,6 +1867,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	if !s.parse() {
 		e.stack.Stats().MalformedRcvdPackets.Increment()
 		e.stack.Stats().TCP.InvalidSegmentsReceived.Increment()
+		e.stats.ReceiveErrors.e.MalformedPacketsReceived.Increment()
 		s.decRef()
 		return
 	}
@@ -1796,11 +1875,13 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	if !s.csumValid {
 		e.stack.Stats().MalformedRcvdPackets.Increment()
 		e.stack.Stats().TCP.ChecksumErrors.Increment()
+		e.stats.ReceiveErrors.ChecksumErrors.Increment()
 		s.decRef()
 		return
 	}
 
 	e.stack.Stats().TCP.ValidSegmentsReceived.Increment()
+	e.stats.SegmentsReceived.Increment()
 	if (s.flags & header.TCPFlagRst) != 0 {
 		e.stack.Stats().TCP.ResetsReceived.Increment()
 	}
@@ -1811,6 +1892,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	} else {
 		// The queue is full, so we drop the segment.
 		e.stack.Stats().DroppedPackets.Increment()
+		e.stats.ReceiveErrors.e.ReceiveBufferOverflow.Increment()
 		s.decRef()
 	}
 }
@@ -1860,6 +1942,7 @@ func (e *endpoint) readyToRead(s *segment) {
 		// that a subsequent read of the segment will correctly trigger
 		// a non-zero notification.
 		if avail := e.receiveBufferAvailableLocked(); avail>>e.rcv.rcvWndScale == 0 {
+			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
 			e.zeroWindow = true
 		}
 		e.rcvList.PushBack(s)

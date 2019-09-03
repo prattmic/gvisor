@@ -291,6 +291,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	h.resetToSynRcvd(cookie, irs, opts)
 	if err := h.execute(); err != nil {
 		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		ep.stats.FailedConnectionAttempts.Increment()
 		ep.Close()
 		if l.listenEP != nil {
 			l.removePendingEndpoint(ep)
@@ -363,6 +364,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		e.stats.FailedConnectionAttempts.Increment()
 		return
 	}
 	ctx.removePendingEndpoint(n)
@@ -414,6 +416,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			}
 			decSynRcvdCount()
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
 		} else {
@@ -421,6 +424,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// is full then drop the syn.
 			if e.acceptQueueIsFull() {
 				e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
+				e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 				e.stack.Stats().DroppedPackets.Increment()
 				return
 			}
@@ -451,6 +455,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// complete the connection at the time of retransmit if
 			// the backlog has space.
 			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
 		}
@@ -505,6 +510,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n, err := ctx.createConnectingEndpoint(s, s.ackNumber-1, s.sequenceNumber-1, rcvdSynOptions)
 		if err != nil {
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+			e.stats.FailedConnectionAttempts.Increment()
 			return
 		}
 

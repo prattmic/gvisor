@@ -64,6 +64,7 @@ type endpoint struct {
 	stack       *stack.Stack `state:"manual"`
 	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue
+	stats       tcpip.EndpointStats
 
 	// The following fields are used to manage the receive queue, and are
 	// protected by rcvMu.
@@ -190,6 +191,7 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	if e.rcvList.Empty() {
 		err := tcpip.ErrWouldBlock
 		if e.rcvClosed {
+			e.stats.ReadErrors.ReadClosed.Increment()
 			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
@@ -270,6 +272,7 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netPr
 	// Find a route to the desired destination.
 	r, err := e.stack.FindRoute(nicid, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
+		e.stats.SendErrors.NoRoute.Increment()
 		return stack.Route{}, 0, err
 	}
 	return r, nicid, nil
@@ -295,6 +298,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
+		e.stats.WriteErrors.WriteClosed.Increment()
 		return 0, nil, tcpip.ErrClosedForSend
 	}
 
@@ -302,6 +306,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 	for {
 		retry, err := e.prepareForWrite(to)
 		if err != nil {
+			e.stats.WriteErrors.InvalidEndpointState.Increment()
 			return 0, nil, err
 		}
 
@@ -327,6 +332,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 
 			// Recheck state after lock was re-acquired.
 			if e.state != StateConnected {
+				e.stats.WriteErrors.InvalidEndpointState.Increment()
 				return 0, nil, tcpip.ErrInvalidEndpointState
 			}
 		}
@@ -336,6 +342,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		nicid := to.NIC
 		if e.bindNICID != 0 {
 			if nicid != 0 && nicid != e.bindNICID {
+				e.stats.SendErrors.NoRoute.Increment()
 				return 0, nil, tcpip.ErrNoRoute
 			}
 
@@ -343,16 +350,19 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		}
 
 		if to.Addr == header.IPv4Broadcast && !e.broadcast {
+			e.stats.SendErrors.NoRoute.Increment()
 			return 0, nil, tcpip.ErrBroadcastDisabled
 		}
 
 		netProto, err := e.checkV4Mapped(to, false)
 		if err != nil {
+			e.stats.SendErrors.NoRoute.Increment()
 			return 0, nil, err
 		}
 
 		r, _, err := e.connectRoute(nicid, *to, netProto)
 		if err != nil {
+			e.stats.SendErrors.NoRoute.Increment()
 			return 0, nil, err
 		}
 		defer r.Release()
@@ -364,8 +374,10 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 	if route.IsResolutionRequired() {
 		if ch, err := route.Resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
+				e.stats.SendErrors.NoLinkAddr.Increment()
 				return 0, ch, tcpip.ErrNoLinkAddress
 			}
+			e.stats.SendErrors.NoRoute.Increment()
 			return 0, nil, err
 		}
 	}
@@ -381,8 +393,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 	}
 
 	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.id.LocalPort, dstPort, ttl); err != nil {
+		e.stats.SendErrors.SendErrors.Increment()
 		return 0, nil, err
 	}
+	e.stats.PacketsSent.Increment()
+
 	return int64(len(v)), nil, nil
 }
 
@@ -687,10 +702,15 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		udp.SetChecksum(^udp.CalculateChecksum(xsum))
 	}
 
+	err := r.WritePacket(nil /* gso */, hdr, data, ProtocolNumber, ttl)
+	if err != nil {
+		r.Stats().UDP.PacketSendErrors.Increment()
+		return err
+	}
+
 	// Track count of packets sent.
 	r.Stats().UDP.PacketsSent.Increment()
-
-	return r.WritePacket(nil /* gso */, hdr, data, ProtocolNumber, ttl)
+	return nil
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
@@ -1030,6 +1050,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	if int(hdr.Length()) > vv.Size() {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
+		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
 
@@ -1037,10 +1058,19 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 
 	e.rcvMu.Lock()
 	e.stack.Stats().UDP.PacketsReceived.Increment()
+	e.stats.PacketsReceived.Increment()
 
 	// Drop the packet if our buffer is currently full.
-	if !e.rcvReady || e.rcvClosed || e.rcvBufSize >= e.rcvBufSizeMax {
+	if !e.rcvReady || e.rcvClosed {
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
+		e.stats.ReceiveErrors.ClosedReceiver.Increment()
+		e.rcvMu.Unlock()
+		return
+	}
+
+	if e.rcvBufSize >= e.rcvBufSizeMax {
+		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
+		e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
 		e.rcvMu.Unlock()
 		return
 	}
