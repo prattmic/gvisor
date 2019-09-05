@@ -1,3 +1,4 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//test/syscalls:build_defs.bzl", "select_for_linux")
 
 package(
@@ -227,8 +228,9 @@ cc_library(
         ":logging",
         ":posix_error",
         ":save_util",
-        "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",

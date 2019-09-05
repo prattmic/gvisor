@@ -44,13 +44,14 @@ http_archive(
 )
 
 # Load protobuf dependencies.
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-
-git_repository(
+http_archive(
     name = "com_google_protobuf",
-    commit = "09745575a923640154bcf307fba8aedff47f240a",
-    remote = "https://github.com/protocolbuffers/protobuf",
-    shallow_since = "1558721209 -0700",
+    sha256 = "532d2575d8c0992065bb19ec5fba13aa3683499726f6055c11b474f91a00bb0c",
+    strip_prefix = "protobuf-7f520092d9050d96fb4b707ad11a51701af4ce49",
+    urls = [
+        "https://mirror.bazel.build/github.com/protocolbuffers/protobuf/archive/7f520092d9050d96fb4b707ad11a51701af4ce49.zip",
+        "https://github.com/protocolbuffers/protobuf/archive/7f520092d9050d96fb4b707ad11a51701af4ce49.zip",
+    ],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -221,16 +222,6 @@ go_repository(
 
 # System Call test dependencies.
 http_archive(
-    name = "com_github_gflags_gflags",
-    sha256 = "34af2f15cf7367513b352bdcd2493ab14ce43692d2dcd9dfc499492966c64dcf",
-    strip_prefix = "gflags-2.2.2",
-    urls = [
-        "https://mirror.bazel.build/github.com/gflags/gflags/archive/v2.2.2.tar.gz",
-        "https://github.com/gflags/gflags/archive/v2.2.2.tar.gz",
-    ],
-)
-
-http_archive(
     name = "com_google_absl",
     sha256 = "56775f1283a59e6274c28d99981a9717ff4e0b1161e9129fdb2fcf22531d8d93",
     strip_prefix = "abseil-cpp-a0d1e098c2f99694fa399b175a7ccf920762030e",
@@ -242,10 +233,10 @@ http_archive(
 
 http_archive(
     name = "com_google_googletest",
-    sha256 = "db657310d3c5ca2d3f674e3a4b79718d1d39da70604568ee0568ba8e39065ef4",
-    strip_prefix = "googletest-31200def0dec8a624c861f919e86e4444e6e6ee7",
+    sha256 = "0a10bea96d8670e5eef948d79d824162b1577bb7889539e49ec786bfc3e48912",
+    strip_prefix = "googletest-565f1b848215b77c3732bca345fe76a0431d8b34",
     urls = [
-        "https://mirror.bazel.build/github.com/google/googletest/archive/31200def0dec8a624c861f919e86e4444e6e6ee7.tar.gz",
-        "https://github.com/google/googletest/archive/31200def0dec8a624c861f919e86e4444e6e6ee7.tar.gz",
+        "https://mirror.bazel.build/github.com/google/googletest/archive/565f1b848215b77c3732bca345fe76a0431d8b34.tar.gz",
+        "https://github.com/google/googletest/archive/565f1b848215b77c3732bca345fe76a0431d8b34.tar.gz",
     ],
 )
