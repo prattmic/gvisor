@@ -21,3 +21,37 @@ if [[ -f $(dirname $0)/common_google.sh ]]; then
 else
   source $(dirname $0)/common_bazel.sh
 fi
+
+
+function set_runtime() {
+  RUNTIME=$1
+  RUNSC_LOGS=/tmp/"${RUNTIME?}"/logs/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
+  RUNSC_LOGS_DIR=$(dirname "${RUNSC_LOGS?}")
+}
+
+function install_runsc_for_test() {
+  local -r test_name=$1
+  shift
+
+  # Add test to the name, so it doesn't conflict with other runtimes.
+  set_runtime $(find_branch_name)_"${test_name?}"
+
+  install_runsc "${RUNTIME?}" \
+      --TESTONLY-test-name-env=RUNSC_TEST_NAME \
+      --debug \
+      --strace \
+      --log-packets \
+      "$@"
+}
+
+function install_runsc() {
+  local -r runtime=$1
+  shift
+  run_as_root //runsc install --experimental=true --runtime="${runtime?}" -- --debug-log "${RUNSC_LOGS?}" "$@"
+
+  # Clear old logs files that may exist.
+  sudo rm -f "${RUNSC_LOGS_DIR?}"/*
+
+  # Restart docker to pick up the new runtime configuration.
+  sudo systemctl restart docker
+}

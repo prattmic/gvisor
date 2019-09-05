@@ -25,6 +25,5 @@ test --test_strategy=standalone --test_tag_filters=requires-kvm //...
 test --test_strategy=standalone //pkg/sentry/platform/kvm:kvm_test
 
 # Install the KVM runtime and run all integration tests.
-run_as_root //runsc install --experimental=true -- --debug --strace --log-packets --platform=kvm
-sudo systemctl restart docker
-test --test_strategy=standalone //test/image:image_test //test/e2e:integration_test
+install_runsc_for_test kvm --platform=kvm
+test --test_arg=--runtime=${RUNTIME?} --test_strategy=standalone //test/image:image_test //test/e2e:integration_test

@@ -48,19 +48,19 @@ fi
 
 # Wrap bazel.
 function build() {
-  bazel build "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@"
+  local -r log="$(mktemp)"
+  (bazel build "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@" &> "${log}") || rc=$?
+  if [[ ${rc} -ne 0 ]]; then
+    cat "${log}"
+    return $rc
+  fi
+
+  grep -A1 '^Target //' "${log}" | grep bazel-bin | awk '{ print $1 }'
 }
 
 function test() {
   (bazel test "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@" && rc=0) || rc=$?
-
-  # Zip out everything into a convenient form.
-  if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
-    find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
-      tar --create --files-from - --transform 's/test\./sponge_log./' |
-      tar --extract --directory ${KOKORO_ARTIFACTS_DIR}
-  fi
-
+  collect_logs
   return $rc
 }
 
@@ -74,4 +74,31 @@ function run_as_root() {
   local binary=$1
   shift
   bazel run --run_under="sudo" "${binary}" -- "$@"
+}
+
+function collect_logs() {
+  # Zip out everything into a convenient form.
+  if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
+    # Move test logs to Kokoro directory. tar is used to conveniently perform
+    # renames while moving files.
+    find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
+      tar --create --files-from - --transform 's/test\./sponge_log./' |
+      tar --extract --directory ${KOKORO_ARTIFACTS_DIR}
+
+    # Collect sentry logs, if any.
+    if [[ "${RUNSC_LOGS_DIR}" != "" ]]; then
+      local -r logs=$(ls "${RUNSC_LOGS_DIR?}")
+      if [[ "${logs?}" != "" ]]; then
+        tar --create --gzip --file="${KOKORO_ARTIFACTS_DIR}/${RUNTIME}.tar.gz" -C "${RUNSC_LOGS_DIR?}" .
+      fi
+    fi
+  fi
+}
+
+function find_branch_name() {
+  local name="$(git branch --show-current || git rev-parse HEAD || true)"
+  if [[ "${name}" == "" ]]; then
+    name=$(bazel info workspace | xargs basename)
+  fi
+  echo "${name}"
 }
