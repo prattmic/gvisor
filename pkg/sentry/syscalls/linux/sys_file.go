@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -28,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -134,6 +136,24 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
+	}
+
+	if path == "/foo/bar" {
+		// Log the mappings of all thread group leaders in the current
+		// PID namespace.
+		//
+		// N.B. Tasks in a thread group aren't required to share a
+		// memory manager, but in practice they almost always do.
+		tgs := t.PIDNamespace().ThreadGroups()
+		for _, tg := range tgs {
+			var m *mm.MemoryManager
+			tg.Leader().WithMuLocked(func(t *kernel.Task) {
+				m = t.MemoryManager()
+			})
+			if m != nil {
+				log.Infof("%d mappings: %v", tg.ID(), m)
+			}
+		}
 	}
 
 	resolve := flags&linux.O_NOFOLLOW == 0
