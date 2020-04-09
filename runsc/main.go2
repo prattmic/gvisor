@@ -36,6 +36,8 @@ import (
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
+
+	_ "gvisor.dev/gvisor/pkg/segment"
 )
 
 var (

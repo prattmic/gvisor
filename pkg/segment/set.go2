@@ -36,18 +36,18 @@ type Range interface{}
 // Value is a required type parameter.
 type Value interface{}
 
-// Functions is a required type parameter that must be a struct implementing
-// the methods defined by Functions.
-type Functions interface {
+contract setCompatible(Key, Value, Functions) {
+	numeric(Key)
+
 	// MinKey returns the minimum allowed key.
-	MinKey() Key
+	Functions MinKey() Key
 
 	// MaxKey returns the maximum allowed key + 1.
-	MaxKey() Key
+	Functions MaxKey() Key
 
 	// ClearValue deinitializes the given value. (For example, if Value is a
 	// pointer or interface type, ClearValue should set it to nil.)
-	ClearValue(*Value)
+	Functions ClearValue(*Value)
 
 	// Merge attempts to merge the values corresponding to two consecutive
 	// segments. If successful, Merge returns (merged value, true). Otherwise,
@@ -56,7 +56,7 @@ type Functions interface {
 	// Preconditions: r1.End == r2.Start.
 	//
 	// Postconditions: If merging succeeds, val1 and val2 are invalidated.
-	Merge(r1 Range, val1 Value, r2 Range, val2 Value) (Value, bool)
+	Functions Merge(r1 Range(Key), val1 Value, r2 Range(Key), val2 Value) (Value, bool)
 
 	// Split splits a segment's value at a key within its range, such that the
 	// first returned value corresponds to the range [r.Start, split) and the
@@ -65,7 +65,7 @@ type Functions interface {
 	// Preconditions: r.Start < split < r.End.
 	//
 	// Postconditions: The original value val is invalidated.
-	Split(r Range, val Value, split Key) (Value, Value)
+	Functions Split(r Range(Key), val Value, split Key) (Value, Value)
 }
 
 const (
@@ -90,8 +90,8 @@ const (
 // copyable. Set is thread-compatible.
 //
 // +stateify savable
-type Set struct {
-	root node `state:".(*SegmentDataSlices)"`
+type Set(type Key, Value, Functions setCompatible) struct {
+	root node(Key, Value, Functions) `state:".(*SegmentDataSlices)"`
 }
 
 // IsEmpty returns true if the set contains no segments.
