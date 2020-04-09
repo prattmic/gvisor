@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -56,7 +56,7 @@ func (mm *MemoryManager) SetMmapLayout(ac arch.Context, r *limits.LimitSet) (arc
 
 // Fork creates a copy of mm with 1 user, as for Linux syscalls fork() or
 // clone() (without CLONE_VM).
-func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
+func (mm *MemoryManager) Fork(ctx scontext.Context) (*MemoryManager, error) {
 	mm.metadataMu.Lock()
 	defer mm.metadataMu.Unlock()
 	mm.mappingMu.RLock()
@@ -243,7 +243,7 @@ func (mm *MemoryManager) IncUsers() bool {
 
 // DecUsers decrements mm's user count. If the user count reaches 0, all
 // mappings in mm are unmapped.
-func (mm *MemoryManager) DecUsers(ctx context.Context) {
+func (mm *MemoryManager) DecUsers(ctx scontext.Context) {
 	if users := atomic.AddInt32(&mm.users, -1); users > 0 {
 		return
 	} else if users < 0 {

@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -29,7 +29,7 @@ import (
 
 // Preconditions: mm.mappingMu must be locked for writing. opts must be valid
 // as defined by the checks in MMap.
-func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOpts) (vmaIterator, usermem.AddrRange, error) {
+func (mm *MemoryManager) createVMALocked(ctx scontext.Context, opts memmap.MMapOpts) (vmaIterator, usermem.AddrRange, error) {
 	if opts.MaxPerms != opts.MaxPerms.Effective() {
 		panic(fmt.Sprintf("Non-effective MaxPerms %s cannot be enforced", opts.MaxPerms))
 	}
@@ -257,7 +257,7 @@ func (mm *MemoryManager) mlockedBytesRangeLocked(ar usermem.AddrRange) uint64 {
 //
 // Preconditions: mm.mappingMu must be locked for reading; it may be
 // temporarily unlocked. ar.Length() != 0.
-func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) (vmaIterator, vmaGapIterator, error) {
+func (mm *MemoryManager) getVMAsLocked(ctx scontext.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) (vmaIterator, vmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -313,7 +313,7 @@ func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange
 // temporarily unlocked.
 //
 // Postconditions: ars is not mutated.
-func (mm *MemoryManager) getVecVMAsLocked(ctx context.Context, ars usermem.AddrRangeSeq, at usermem.AccessType, ignorePermissions bool) (usermem.AddrRangeSeq, error) {
+func (mm *MemoryManager) getVecVMAsLocked(ctx scontext.Context, ars usermem.AddrRangeSeq, at usermem.AccessType, ignorePermissions bool) (usermem.AddrRangeSeq, error) {
 	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
 		ar := arsit.Head()
 		if ar.Length() == 0 {
@@ -339,7 +339,7 @@ const guardBytes = 256 * usermem.PageSize
 //
 // Preconditions: mm.mappingMu must be locked for writing. ar.Length() != 0.
 // ar must be page-aligned.
-func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
+func (mm *MemoryManager) unmapLocked(ctx scontext.Context, ar usermem.AddrRange) vmaGapIterator {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -358,7 +358,7 @@ func (mm *MemoryManager) unmapLocked(ctx context.Context, ar usermem.AddrRange) 
 //
 // Preconditions: mm.mappingMu must be locked for writing. ar.Length() != 0. ar
 // must be page-aligned.
-func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRange) vmaGapIterator {
+func (mm *MemoryManager) removeVMAsLocked(ctx scontext.Context, ar usermem.AddrRange) vmaGapIterator {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))

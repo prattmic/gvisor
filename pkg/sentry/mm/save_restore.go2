@@ -17,12 +17,12 @@ package mm
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 )
 
 // InvalidateUnsavable invokes memmap.Mappable.InvalidateUnsavable on all
 // Mappables mapped by mm.
-func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
+func (mm *MemoryManager) InvalidateUnsavable(ctx scontext.Context) error {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {

@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -39,7 +39,7 @@ func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
 //
 // When this MemoryManager is no longer needed by a task, it should call
 // Deactivate to release the reference.
-func (mm *MemoryManager) Activate(ctx context.Context) error {
+func (mm *MemoryManager) Activate(ctx scontext.Context) error {
 	// Fast path: the MemoryManager already has an active
 	// platform.AddressSpace, and we just need to indicate that we need it too.
 	for {

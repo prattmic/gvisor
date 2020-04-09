@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -60,7 +60,7 @@ func (mm *MemoryManager) NeedsUpdate(generation int64) bool {
 
 // ReadMapsDataInto is called by fsimpl/proc.mapsData.Generate to
 // implement /proc/[pid]/maps.
-func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer) {
+func (mm *MemoryManager) ReadMapsDataInto(ctx scontext.Context, buf *bytes.Buffer) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	var start usermem.Addr
@@ -85,7 +85,7 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, buf *bytes.Buffer
 
 // ReadMapsSeqFileData is called by fs/proc.mapsData.ReadSeqFileData to
 // implement /proc/[pid]/maps.
-func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (mm *MemoryManager) ReadMapsSeqFileData(ctx scontext.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	var data []seqfile.SeqData
@@ -124,14 +124,14 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 // vseg, including the trailing newline.
 //
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) vmaMapsEntryLocked(ctx context.Context, vseg vmaIterator) []byte {
+func (mm *MemoryManager) vmaMapsEntryLocked(ctx scontext.Context, vseg vmaIterator) []byte {
 	var b bytes.Buffer
 	mm.appendVMAMapsEntryLocked(ctx, vseg, &b)
 	return b.Bytes()
 }
 
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaIterator, b *bytes.Buffer) {
+func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx scontext.Context, vseg vmaIterator, b *bytes.Buffer) {
 	vma := vseg.ValuePtr()
 	private := "p"
 	if !vma.private {
@@ -175,7 +175,7 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 
 // ReadSmapsDataInto is called by fsimpl/proc.smapsData.Generate to
 // implement /proc/[pid]/maps.
-func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffer) {
+func (mm *MemoryManager) ReadSmapsDataInto(ctx scontext.Context, buf *bytes.Buffer) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	var start usermem.Addr
@@ -193,7 +193,7 @@ func (mm *MemoryManager) ReadSmapsDataInto(ctx context.Context, buf *bytes.Buffe
 
 // ReadSmapsSeqFileData is called by fs/proc.smapsData.ReadSeqFileData to
 // implement /proc/[pid]/smaps.
-func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (mm *MemoryManager) ReadSmapsSeqFileData(ctx scontext.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	var data []seqfile.SeqData
@@ -225,13 +225,13 @@ func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfil
 // by vseg, including the trailing newline.
 //
 // Preconditions: mm.mappingMu must be locked.
-func (mm *MemoryManager) vmaSmapsEntryLocked(ctx context.Context, vseg vmaIterator) []byte {
+func (mm *MemoryManager) vmaSmapsEntryLocked(ctx scontext.Context, vseg vmaIterator) []byte {
 	var b bytes.Buffer
 	mm.vmaSmapsEntryIntoLocked(ctx, vseg, &b)
 	return b.Bytes()
 }
 
-func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx context.Context, vseg vmaIterator, b *bytes.Buffer) {
+func (mm *MemoryManager) vmaSmapsEntryIntoLocked(ctx scontext.Context, vseg vmaIterator, b *bytes.Buffer) {
 	mm.appendVMAMapsEntryLocked(ctx, vseg, b)
 	vma := vseg.ValuePtr()
 

@@ -38,6 +38,8 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	_ "gvisor.dev/gvisor/pkg/segment"
+	// XXX: doesn't work unless go2 packages are imported in main
+	_ "gvisor.dev/gvisor/pkg/sentry/mm"
 )
 
 var (

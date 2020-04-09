@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 )
 
 const (
@@ -35,11 +35,11 @@ const (
 
 // String implements fmt.Stringer.String.
 func (mm *MemoryManager) String() string {
-	return mm.DebugString(context.Background())
+	return mm.DebugString(scontext.Background())
 }
 
 // DebugString returns a string containing information about mm for debugging.
-func (mm *MemoryManager) DebugString(ctx context.Context) string {
+func (mm *MemoryManager) DebugString(ctx scontext.Context) string {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
 	mm.activeMu.RLock()
@@ -48,7 +48,7 @@ func (mm *MemoryManager) DebugString(ctx context.Context) string {
 }
 
 // Preconditions: mm.mappingMu and mm.activeMu must be locked.
-func (mm *MemoryManager) debugStringLocked(ctx context.Context) string {
+func (mm *MemoryManager) debugStringLocked(ctx scontext.Context) string {
 	var b bytes.Buffer
 	b.WriteString("VMAs:\n")
 	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {

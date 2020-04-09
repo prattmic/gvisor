@@ -16,7 +16,7 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -225,7 +225,7 @@ func (m *aioMappable) DecRef() {
 }
 
 // MappedName implements memmap.MappingIdentity.MappedName.
-func (m *aioMappable) MappedName(ctx context.Context) string {
+func (m *aioMappable) MappedName(ctx scontext.Context) string {
 	return "[aio]"
 }
 
@@ -240,13 +240,13 @@ func (m *aioMappable) InodeID() uint64 {
 }
 
 // Msync implements memmap.MappingIdentity.Msync.
-func (m *aioMappable) Msync(ctx context.Context, mr memmap.MappableRange) error {
+func (m *aioMappable) Msync(ctx scontext.Context, mr memmap.MappableRange) error {
 	// Linux: aio_ring_fops.fsync == NULL
 	return syserror.EINVAL
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar usermem.AddrRange, offset uint64, _ bool) error {
+func (m *aioMappable) AddMapping(_ scontext.Context, _ memmap.MappingSpace, ar usermem.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(ar.Length()) != aioRingBufferSize {
@@ -256,11 +256,11 @@ func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar us
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (m *aioMappable) RemoveMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
+func (m *aioMappable) RemoveMapping(scontext.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, _ bool) error {
+func (m *aioMappable) CopyMapping(ctx scontext.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(dstAR.Length()) != aioRingBufferSize {
@@ -292,7 +292,7 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (m *aioMappable) Translate(ctx scontext.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
 		err = &memmap.BusError{syserror.EFAULT}
@@ -311,14 +311,14 @@ func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.M
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (m *aioMappable) InvalidateUnsavable(ctx context.Context) error {
+func (m *aioMappable) InvalidateUnsavable(ctx scontext.Context) error {
 	return nil
 }
 
 // NewAIOContext creates a new context for asynchronous I/O.
 //
 // NewAIOContext is analogous to Linux's fs/aio.c:ioctx_alloc().
-func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint64, error) {
+func (mm *MemoryManager) NewAIOContext(ctx scontext.Context, events uint32) (uint64, error) {
 	// libaio get_ioevents() expects context "handle" to be a valid address.
 	// libaio peeks inside looking for a magic number. This function allocates
 	// a page per context and keeps it set to zeroes to ensure it will not
@@ -351,7 +351,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 
 // DestroyAIOContext destroys an asynchronous I/O context. It returns false if
 // the context does not exist.
-func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) bool {
+func (mm *MemoryManager) DestroyAIOContext(ctx scontext.Context, id uint64) bool {
 	if _, ok := mm.LookupAIOContext(ctx, id); !ok {
 		return false
 	}
@@ -370,7 +370,7 @@ func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) bool 
 
 // LookupAIOContext looks up the given context. It returns false if the context
 // does not exist.
-func (mm *MemoryManager) LookupAIOContext(ctx context.Context, id uint64) (*AIOContext, bool) {
+func (mm *MemoryManager) LookupAIOContext(ctx scontext.Context, id uint64) (*AIOContext, bool) {
 	aioCtx, ok := mm.aioManager.lookupAIOContext(id)
 	if !ok {
 		return nil, false

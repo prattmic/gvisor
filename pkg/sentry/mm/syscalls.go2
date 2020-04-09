@@ -19,7 +19,7 @@ import (
 	mrand "math/rand"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -33,7 +33,7 @@ import (
 // application thread's stack pointer.
 //
 // Preconditions: mm.as != nil.
-func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr usermem.Addr, at usermem.AccessType, sp usermem.Addr) error {
+func (mm *MemoryManager) HandleUserFault(ctx scontext.Context, addr usermem.Addr, at usermem.AccessType, sp usermem.Addr) error {
 	ar, ok := addr.RoundDown().ToRange(usermem.PageSize)
 	if !ok {
 		return syserror.EFAULT
@@ -72,7 +72,7 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr usermem.Addr,
 }
 
 // MMap establishes a memory mapping.
-func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (usermem.Addr, error) {
+func (mm *MemoryManager) MMap(ctx scontext.Context, opts memmap.MMapOpts) (usermem.Addr, error) {
 	if opts.Length == 0 {
 		return 0, syserror.EINVAL
 	}
@@ -167,7 +167,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 // into mm.as if it is active.
 //
 // Preconditions: mm.mappingMu must be locked. vseg.Range().IsSupersetOf(ar).
-func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
+func (mm *MemoryManager) populateVMA(ctx scontext.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		// Linux doesn't populate inaccessible pages. See
 		// mm/gup.c:populate_vma_page_range.
@@ -212,7 +212,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar u
 // vseg.Range().IsSupersetOf(ar).
 //
 // Postconditions: mm.mappingMu will be unlocked.
-func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
+func (mm *MemoryManager) populateVMAAndUnlock(ctx scontext.Context, vseg vmaIterator, ar usermem.AddrRange, precommit bool) {
 	// See populateVMA above for commentary.
 	if !vseg.ValuePtr().effectivePerms.Any() {
 		mm.mappingMu.Unlock()
@@ -243,7 +243,7 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 }
 
 // MapStack allocates the initial process stack.
-func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error) {
+func (mm *MemoryManager) MapStack(ctx scontext.Context) (usermem.AddrRange, error) {
 	// maxStackSize is the maximum supported process stack size in bytes.
 	//
 	// This limit exists because stack growing isn't implemented, so the entire
@@ -288,7 +288,7 @@ func (mm *MemoryManager) MapStack(ctx context.Context) (usermem.AddrRange, error
 }
 
 // MUnmap implements the semantics of Linux's munmap(2).
-func (mm *MemoryManager) MUnmap(ctx context.Context, addr usermem.Addr, length uint64) error {
+func (mm *MemoryManager) MUnmap(ctx scontext.Context, addr usermem.Addr, length uint64) error {
 	if addr != addr.RoundDown() {
 		return syserror.EINVAL
 	}
@@ -337,7 +337,7 @@ const (
 )
 
 // MRemap implements the semantics of Linux's mremap(2).
-func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (usermem.Addr, error) {
+func (mm *MemoryManager) MRemap(ctx scontext.Context, oldAddr usermem.Addr, oldSize uint64, newSize uint64, opts MRemapOpts) (usermem.Addr, error) {
 	// "Note that old_address has to be page aligned." - mremap(2)
 	if oldAddr.RoundDown() != oldAddr {
 		return 0, syserror.EINVAL
@@ -701,7 +701,7 @@ func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms us
 }
 
 // BrkSetup sets mm's brk address to addr and its brk size to 0.
-func (mm *MemoryManager) BrkSetup(ctx context.Context, addr usermem.Addr) {
+func (mm *MemoryManager) BrkSetup(ctx scontext.Context, addr usermem.Addr) {
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
 	// Unmap the existing brk.
@@ -713,7 +713,7 @@ func (mm *MemoryManager) BrkSetup(ctx context.Context, addr usermem.Addr) {
 
 // Brk implements the semantics of Linux's brk(2), except that it returns an
 // error on failure.
-func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Addr, error) {
+func (mm *MemoryManager) Brk(ctx scontext.Context, addr usermem.Addr) (usermem.Addr, error) {
 	mm.mappingMu.Lock()
 	// Can't defer mm.mappingMu.Unlock(); see below.
 
@@ -784,7 +784,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 
 // MLock implements the semantics of Linux's mlock()/mlock2()/munlock(),
 // depending on mode.
-func (mm *MemoryManager) MLock(ctx context.Context, addr usermem.Addr, length uint64, mode memmap.MLockMode) error {
+func (mm *MemoryManager) MLock(ctx scontext.Context, addr usermem.Addr, length uint64, mode memmap.MLockMode) error {
 	// Linux allows this to overflow.
 	la, _ := usermem.Addr(length + addr.PageOffset()).RoundUp()
 	ar, ok := addr.RoundDown().ToRange(uint64(la))
@@ -905,7 +905,7 @@ type MLockAllOpts struct {
 
 // MLockAll implements the semantics of Linux's mlockall()/munlockall(),
 // depending on opts.
-func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error {
+func (mm *MemoryManager) MLockAll(ctx scontext.Context, opts MLockAllOpts) error {
 	if !opts.Current && !opts.Future {
 		return syserror.EINVAL
 	}
@@ -1140,7 +1140,7 @@ type MSyncOpts struct {
 }
 
 // MSync implements the semantics of Linux's msync().
-func (mm *MemoryManager) MSync(ctx context.Context, addr usermem.Addr, length uint64, opts MSyncOpts) error {
+func (mm *MemoryManager) MSync(ctx scontext.Context, addr usermem.Addr, length uint64, opts MSyncOpts) error {
 	if addr != addr.RoundDown() {
 		return syserror.EINVAL
 	}
@@ -1216,7 +1216,7 @@ func (mm *MemoryManager) MSync(ctx context.Context, addr usermem.Addr, length ui
 }
 
 // GetSharedFutexKey is used by kernel.Task.GetSharedKey.
-func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr usermem.Addr) (futex.Key, error) {
+func (mm *MemoryManager) GetSharedFutexKey(ctx scontext.Context, addr usermem.Addr) (futex.Key, error) {
 	ar, ok := addr.ToRange(4) // sizeof(int32).
 	if !ok {
 		return futex.Key{}, syserror.EFAULT

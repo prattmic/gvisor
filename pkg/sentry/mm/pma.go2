@@ -17,7 +17,7 @@ package mm
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -94,7 +94,7 @@ func (mm *MemoryManager) existingVecPMAsLocked(ars usermem.AddrRangeSeq, at user
 // writing. ar.Length() != 0. vseg.Range().Contains(ar.Start). vmas must exist
 // for all addresses in ar, and support accesses of type at (i.e. permission
 // checks must have been performed against vmas).
-func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, at usermem.AccessType) (pmaIterator, pmaGapIterator, error) {
+func (mm *MemoryManager) getPMAsLocked(ctx scontext.Context, vseg vmaIterator, ar usermem.AddrRange, at usermem.AccessType) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -139,7 +139,7 @@ func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar
 // Preconditions: mm.mappingMu must be locked. mm.activeMu must be locked for
 // writing. vmas must exist for all addresses in ars, and support accesses of
 // type at (i.e. permission checks must have been performed against vmas).
-func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars usermem.AddrRangeSeq, at usermem.AccessType) (usermem.AddrRangeSeq, error) {
+func (mm *MemoryManager) getVecPMAsLocked(ctx scontext.Context, ars usermem.AddrRangeSeq, at usermem.AccessType) (usermem.AddrRangeSeq, error) {
 	for arsit := ars; !arsit.IsEmpty(); arsit = arsit.Tail() {
 		ar := arsit.Head()
 		if ar.Length() == 0 {
@@ -185,7 +185,7 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars usermem.AddrR
 //
 // getPMAsInternalLocked is an implementation helper for getPMAsLocked and
 // getVecPMAsLocked; other clients should call one of those instead.
-func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIterator, ar usermem.AddrRange, at usermem.AccessType) (pmaIterator, pmaGapIterator, error) {
+func (mm *MemoryManager) getPMAsInternalLocked(ctx scontext.Context, vseg vmaIterator, ar usermem.AddrRange, at usermem.AccessType) (pmaIterator, pmaGapIterator, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))
@@ -615,7 +615,7 @@ func (mm *MemoryManager) invalidateLocked(ar usermem.AddrRange, invalidatePrivat
 // in the Linux kernel.
 //
 // Preconditions: ar.Length() != 0. ar must be page-aligned.
-func (mm *MemoryManager) Pin(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) ([]PinnedRange, error) {
+func (mm *MemoryManager) Pin(ctx scontext.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool) ([]PinnedRange, error) {
 	if checkInvariants {
 		if !ar.WellFormed() || ar.Length() <= 0 || !ar.IsPageAligned() {
 			panic(fmt.Sprintf("invalid ar: %v", ar))

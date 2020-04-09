@@ -15,7 +15,7 @@
 package mm
 
 import (
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -89,7 +89,7 @@ func (mm *MemoryManager) asioEnabled(opts usermem.IOOpts) bool {
 
 // translateIOError converts errors to EFAULT, as is usually reported for all
 // I/O errors originating from MM in Linux.
-func translateIOError(ctx context.Context, err error) error {
+func translateIOError(ctx scontext.Context, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -100,7 +100,7 @@ func translateIOError(ctx context.Context, err error) error {
 }
 
 // CopyOut implements usermem.IO.CopyOut.
-func (mm *MemoryManager) CopyOut(ctx context.Context, addr usermem.Addr, src []byte, opts usermem.IOOpts) (int, error) {
+func (mm *MemoryManager) CopyOut(ctx scontext.Context, addr usermem.Addr, src []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(src)))
 	if !ok {
 		return 0, syserror.EFAULT
@@ -123,7 +123,7 @@ func (mm *MemoryManager) CopyOut(ctx context.Context, addr usermem.Addr, src []b
 	return int(n64), err
 }
 
-func (mm *MemoryManager) asCopyOut(ctx context.Context, addr usermem.Addr, src []byte) (int, error) {
+func (mm *MemoryManager) asCopyOut(ctx scontext.Context, addr usermem.Addr, src []byte) (int, error) {
 	var done int
 	for {
 		n, err := mm.as.CopyOut(addr+usermem.Addr(done), src[done:])
@@ -143,7 +143,7 @@ func (mm *MemoryManager) asCopyOut(ctx context.Context, addr usermem.Addr, src [
 }
 
 // CopyIn implements usermem.IO.CopyIn.
-func (mm *MemoryManager) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
+func (mm *MemoryManager) CopyIn(ctx scontext.Context, addr usermem.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(dst)))
 	if !ok {
 		return 0, syserror.EFAULT
@@ -166,7 +166,7 @@ func (mm *MemoryManager) CopyIn(ctx context.Context, addr usermem.Addr, dst []by
 	return int(n64), err
 }
 
-func (mm *MemoryManager) asCopyIn(ctx context.Context, addr usermem.Addr, dst []byte) (int, error) {
+func (mm *MemoryManager) asCopyIn(ctx scontext.Context, addr usermem.Addr, dst []byte) (int, error) {
 	var done int
 	for {
 		n, err := mm.as.CopyIn(addr+usermem.Addr(done), dst[done:])
@@ -186,7 +186,7 @@ func (mm *MemoryManager) asCopyIn(ctx context.Context, addr usermem.Addr, dst []
 }
 
 // ZeroOut implements usermem.IO.ZeroOut.
-func (mm *MemoryManager) ZeroOut(ctx context.Context, addr usermem.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) ZeroOut(ctx scontext.Context, addr usermem.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
 	ar, ok := mm.CheckIORange(addr, toZero)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -208,7 +208,7 @@ func (mm *MemoryManager) ZeroOut(ctx context.Context, addr usermem.Addr, toZero 
 	})
 }
 
-func (mm *MemoryManager) asZeroOut(ctx context.Context, addr usermem.Addr, toZero int64) (int64, error) {
+func (mm *MemoryManager) asZeroOut(ctx scontext.Context, addr usermem.Addr, toZero int64) (int64, error) {
 	var done int64
 	for {
 		n, err := mm.as.ZeroOut(addr+usermem.Addr(done), uintptr(toZero-done))
@@ -228,7 +228,7 @@ func (mm *MemoryManager) asZeroOut(ctx context.Context, addr usermem.Addr, toZer
 }
 
 // CopyOutFrom implements usermem.IO.CopyOutFrom.
-func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) CopyOutFrom(ctx scontext.Context, ars usermem.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
 	if !mm.checkIOVec(ars) {
 		return 0, syserror.EFAULT
 	}
@@ -273,7 +273,7 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars usermem.AddrRangeS
 }
 
 // CopyInTo implements usermem.IO.CopyInTo.
-func (mm *MemoryManager) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
+func (mm *MemoryManager) CopyInTo(ctx scontext.Context, ars usermem.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
 	if !mm.checkIOVec(ars) {
 		return 0, syserror.EFAULT
 	}
@@ -310,7 +310,7 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq,
 }
 
 // SwapUint32 implements usermem.IO.SwapUint32.
-func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
+func (mm *MemoryManager) SwapUint32(ctx scontext.Context, addr usermem.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -353,7 +353,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new 
 }
 
 // CompareAndSwapUint32 implements usermem.IO.CompareAndSwapUint32.
-func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
+func (mm *MemoryManager) CompareAndSwapUint32(ctx scontext.Context, addr usermem.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -396,7 +396,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.
 }
 
 // LoadUint32 implements usermem.IO.LoadUint32.
-func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts usermem.IOOpts) (uint32, error) {
+func (mm *MemoryManager) LoadUint32(ctx scontext.Context, addr usermem.Addr, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
@@ -442,7 +442,7 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts
 // operation spanning ioar.
 //
 // Preconditions: mm.as != nil. ioar.Length() != 0. ioar.Contains(addr).
-func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr, ioar usermem.AddrRange, at usermem.AccessType) error {
+func (mm *MemoryManager) handleASIOFault(ctx scontext.Context, addr usermem.Addr, ioar usermem.AddrRange, at usermem.AccessType) error {
 	// Try to map all remaining pages in the I/O operation. This RoundUp can't
 	// overflow because otherwise it would have been caught by CheckIORange.
 	end, _ := ioar.End.RoundUp()
@@ -495,7 +495,7 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr,
 // more useful for usermem.IO methods.
 //
 // Preconditions: 0 < ar.Length() <= math.MaxInt64.
-func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
+func (mm *MemoryManager) withInternalMappings(ctx scontext.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// If pmas are already available, we can do IO without touching mm.vmas or
 	// mm.mappingMu.
 	mm.activeMu.RLock()
@@ -564,7 +564,7 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar usermem.Ad
 // internal mappings for the subset of ars for which this property holds.
 //
 // Preconditions: !ars.IsEmpty().
-func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars usermem.AddrRangeSeq, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
+func (mm *MemoryManager) withVecInternalMappings(ctx scontext.Context, ars usermem.AddrRangeSeq, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
 	// withInternalMappings is faster than withVecInternalMappings because of
 	// iterator plumbing (this isn't generally practical in the vector case due
 	// to iterator invalidation between AddrRanges). Use it if possible.

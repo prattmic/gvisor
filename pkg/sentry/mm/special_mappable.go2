@@ -15,7 +15,7 @@
 package mm
 
 import (
-	"gvisor.dev/gvisor/pkg/context"
+	scontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -58,7 +58,7 @@ func (m *SpecialMappable) DecRef() {
 }
 
 // MappedName implements memmap.MappingIdentity.MappedName.
-func (m *SpecialMappable) MappedName(ctx context.Context) string {
+func (m *SpecialMappable) MappedName(ctx scontext.Context) string {
 	return m.name
 }
 
@@ -73,27 +73,27 @@ func (m *SpecialMappable) InodeID() uint64 {
 }
 
 // Msync implements memmap.MappingIdentity.Msync.
-func (m *SpecialMappable) Msync(ctx context.Context, mr memmap.MappableRange) error {
+func (m *SpecialMappable) Msync(ctx scontext.Context, mr memmap.MappableRange) error {
 	// Linux: vm_file is NULL, causing msync to skip it entirely.
 	return nil
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (*SpecialMappable) AddMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) error {
+func (*SpecialMappable) AddMapping(scontext.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (*SpecialMappable) RemoveMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
+func (*SpecialMappable) RemoveMapping(scontext.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (*SpecialMappable) CopyMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, usermem.AddrRange, uint64, bool) error {
+func (*SpecialMappable) CopyMapping(scontext.Context, memmap.MappingSpace, usermem.AddrRange, usermem.AddrRange, uint64, bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (m *SpecialMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
+func (m *SpecialMappable) Translate(ctx scontext.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
 		err = &memmap.BusError{syserror.EFAULT}
@@ -112,7 +112,7 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (m *SpecialMappable) InvalidateUnsavable(ctx context.Context) error {
+func (m *SpecialMappable) InvalidateUnsavable(ctx scontext.Context) error {
 	// Since data is stored in pgalloc.MemoryFile, the contents of which are
 	// preserved across save/restore, we don't need to do anything.
 	return nil
