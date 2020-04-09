@@ -1,0 +1,9 @@
+package foo
+
+contract Adder(T) {
+	T Add(T) T
+}
+
+func Add(type T Adder)(a, b T) T {
+	return a.Add(b)
+}

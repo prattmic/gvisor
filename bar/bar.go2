@@ -1,0 +1,17 @@
+package main
+
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/foo"
+)
+
+type myInt int
+
+func (i myInt) Add(b myInt) myInt {
+	return i + b
+}
+
+func main() {
+	fmt.Println(foo.Add(myInt(1), myInt(2)))
+}
