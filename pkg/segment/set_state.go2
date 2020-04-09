@@ -14,11 +14,11 @@
 
 package segment
 
-func (s *Set) saveRoot() *SegmentDataSlices {
+func (s *Set(Key, Value, Functions)) saveRoot() *SegmentDataSlices(Key, Value, Functions) {
 	return s.ExportSortedSlices()
 }
 
-func (s *Set) loadRoot(sds *SegmentDataSlices) {
+func (s *Set(Key, Value, Functions)) loadRoot(sds *SegmentDataSlices(Key, Value, Functions)) {
 	if err := s.ImportSortedSlices(sds); err != nil {
 		panic(err)
 	}
