@@ -19,12 +19,19 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	scontext "gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/segment"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
+)
+
+type (
+	vmaSet         = segment.Set(usermem.Addr, vma, vmaSetFunctions)
+	vmaIterator    = segment.Iterator(usermem.Addr, vma, vmaSetFunctions)
+	vmaGapIterator = segment.GapIterator(usermem.Addr, vma, vmaSetFunctions)
 )
 
 // Preconditions: mm.mappingMu must be locked for writing. opts must be valid
@@ -463,6 +470,8 @@ func (vmaSetFunctions) Split(ar usermem.AddrRange, v vma, split usermem.Addr) (v
 }
 
 // Preconditions: vseg.ValuePtr().mappable != nil. vseg.Range().Contains(addr).
+//
+// XXX: can't add methods to these types anymore.
 func (vseg vmaIterator) mappableOffsetAt(addr usermem.Addr) uint64 {
 	if checkInvariants {
 		if !vseg.Ok() {
