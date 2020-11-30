@@ -30,6 +30,13 @@ else
 DOCKER_PLATFORM_ARGS :=
 endif
 
+# Can we access docker without root?
+ifeq (0,$(shell docker version 2>/dev/null; echo $$?))
+DOCKER := docker
+else
+DOCKER := sudo docker
+endif
+
 list-all-images:
 	@for image in $(ALL_IMAGES); do echo $${image}; done
 .PHONY: list-build-images
@@ -65,9 +72,9 @@ rebuild-%: register-cross
 	@if ! [ -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
 		(echo "ERROR: Dockerfile for $* not found (is it available for $(ARCH)?)." >&2 && exit 1); \
 	fi
-	$(foreach IMAGE,$(FROM),docker pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
+	$(foreach IMAGE,$(FROM),$(DOCKER) pull $(DOCKER_PLATFORM_ARGS) $(IMAGE) &&) \
 	T=$$(mktemp -d) && cp -a $(call path,$*)/* $$T && \
-		docker build $(DOCKER_PLATFORM_ARGS) \
+		$(DOCKER) build $(DOCKER_PLATFORM_ARGS) \
 			-f "$$T/$(call dockerfile,$*)" \
 			-t "$(call remote_image,$*)" \
 			$$T && \
@@ -77,19 +84,19 @@ rebuild-%: register-cross
 # must be pulled, then it will tag with the latest local target. Note that pull
 # may fail if the remote image is not available.
 pull-%:
-	docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$*)
+	$(DOCKER) pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$*)
 
 # load will either pull the "remote" or build it locally. This is the preferred
 # entrypoint, as it should never fail. The local tag should always be set after
 # this returns (either by the pull or the build).
 load-%:
 	$(MAKE) -s pull-$* || $(MAKE) -s rebuild-$*
-	docker tag $(call remote_image,$*) $(call local_image,$*)
+	$(DOCKER) tag $(call remote_image,$*) $(call local_image,$*)
 
 # push pushes the remote image, after either pulling (to validate that the tag
 # already exists) or building manually.
 push-%: load-%
-	docker push $(call remote_image,$*)
+	$(DOCKER) push $(call remote_image,$*)
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
@@ -97,7 +104,7 @@ push-%: load-%
 register-cross:
 ifneq ($(ARCH),$(shell uname -m))
 ifeq (,$(wildcard /proc/sys/fs/binfmt_misc/qemu-*))
-	docker run --rm --privileged multiarch/qemu-user-static --reset --persistent yes
+	$(DOCKER) run --rm --privileged multiarch/qemu-user-static --reset --persistent yes
 else
 	@true # Already registered.
 endif

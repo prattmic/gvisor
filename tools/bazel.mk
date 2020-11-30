@@ -78,6 +78,13 @@ ifneq ($(GID),0)
 GROUPADD_DOCKER += groupadd --gid $(GID) --non-unique $(USER) &&
 endif
 
+# Can we access docker without root?
+ifeq (0,$(shell docker version 2>/dev/null; echo $$?))
+DOCKER := docker
+else
+DOCKER := sudo docker
+endif
+
 # Add docker passthrough options.
 ifneq ($(DOCKER_PRIVILEGED),)
 FULL_DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
@@ -109,14 +116,14 @@ OPTIONS += --config=$(BAZEL_CONFIG)
 endif
 
 bazel-image: load-default
-	@if docker ps --all | grep $(BUILDER_NAME); then docker rm -f $(BUILDER_NAME); fi
-	docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
+	@if $(DOCKER) ps --all | grep $(BUILDER_NAME); then $(DOCKER) rm -f $(BUILDER_NAME); fi
+	$(DOCKER) run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) \
 		$(BUILDER_BASE) \
 		sh -c "$(GROUPADD_DOCKER) \
 		       $(USERADD_DOCKER) \
 		       if [[ -e /dev/kvm ]]; then chmod a+rw /dev/kvm; fi"
-	docker commit $(BUILDER_NAME) $(BUILDER_IMAGE)
-	@docker rm -f $(BUILDER_NAME)
+	$(DOCKER) commit $(BUILDER_NAME) $(BUILDER_IMAGE)
+	@$(DOCKER) rm -f $(BUILDER_NAME)
 .PHONY: bazel-image
 
 ##
@@ -135,13 +142,13 @@ bazel-image: load-default
 bazel-server-start: bazel-image ## Starts the bazel server.
 	@mkdir -p $(BAZEL_CACHE)
 	@mkdir -p $(GCLOUD_CONFIG)
-	@if docker ps --all | grep $(DOCKER_NAME); then docker rm -f $(DOCKER_NAME); fi
+	@if $(DOCKER) ps --all | grep $(DOCKER_NAME); then $(DOCKER) rm -f $(DOCKER_NAME); fi
 	# This command runs a bazel server, and the container sticks around
 	# until the bazel server exits. This should ensure that it does not
 	# exit in the middle of running a build, but also it won't stick around
 	# forever. The build commands wrap around an appropriate exec into the
 	# container in order to perform work via the bazel client.
-	docker run -d --rm --name $(DOCKER_NAME) \
+	$(DOCKER) run -d --rm --name $(DOCKER_NAME) \
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
 		$(FULL_DOCKER_RUN_OPTIONS) \
@@ -150,20 +157,20 @@ bazel-server-start: bazel-image ## Starts the bazel server.
 .PHONY: bazel-server-start
 
 bazel-shutdown: ## Shuts down a running bazel server.
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) shutdown; \
-	       rc=$$?; docker kill $(DOCKER_NAME) || [[ $$rc -ne 0 ]]
+	@$(DOCKER) exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(BAZEL) shutdown; \
+	       rc=$$?; $(DOCKER) kill $(DOCKER_NAME) || [[ $$rc -ne 0 ]]
 .PHONY: bazel-shutdown
 
 bazel-alias: ## Emits an alias that can be used within the shell.
-	@echo "alias bazel='docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) bazel'"
+	@echo "alias bazel='$(DOCKER) exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) bazel'"
 .PHONY: bazel-alias
 
 bazel-server: ## Ensures that the server exists. Used as an internal target.
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) true >&2 || $(MAKE) bazel-server-start >&2
+	@$(DOCKER) exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) true >&2 || $(MAKE) bazel-server-start >&2
 .PHONY: bazel-server
 
 # build_cmd builds the given targets in the bazel-server container.
-build_cmd = docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c \
+build_cmd = $(DOCKER) exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c \
   '$(BAZEL) build $(BASE_OPTIONS) $(OPTIONS) "$(TARGETS)"'
 
 # build_paths extracts the built binary from the bazel stderr output.
@@ -203,7 +210,7 @@ sudo: bazel-server
 .PHONY: sudo
 
 test: bazel-server
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) \
+	@$(DOCKER) exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) \
 	  $(BAZEL) test $(BASE_OPTIONS) \
 	                --test_output=errors --keep_going --verbose_failures=true \
 	                --build_event_json_file=.build_events.json \
@@ -217,6 +224,6 @@ testlogs:
 .PHONY: testlogs
 
 query: bazel-server
-	@docker exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c \
+	@$(DOCKER) exec $(FULL_DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) sh -o pipefail -c \
 	  '$(BAZEL) query $(BASE_OPTIONS) $(OPTIONS) "$(TARGETS)" 2>/dev/null'
 .PHONY: query
